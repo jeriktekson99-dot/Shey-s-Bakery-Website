@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --primary-red: #d01617;
+    --dark-brown: #4a170a;
+    --warm-orange: #d94d2f;
+    --pure-white: #ffffff;
+    --cream-light: #faf7f2;
+    --cream-border: #ebdcd0;
+  }
+
+  body {
+    background-color: var(--pure-white);
+    color: var(--dark-brown);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    overflow-x: hidden;
+  }
+}
+
+/* Custom Utilities for Shey's Bakery Brand Colors */
+.bg-primary-red {
+  background-color: #d01617;
+}
+
+.text-primary-red {
+  color: #d01617;
+}
+
+.border-primary-red {
+  border-color: #d01617;
+}
+
+.hover\:bg-primary-red-dark:hover {
+  background-color: #b01011;
+}
+
+.bg-dark-brown {
+  background-color: #4a170a;
+}
+
+.text-dark-brown {
+  color: #4a170a;
+}
+
+.border-dark-brown {
+  border-color: #4a170a;
+}
+
+.bg-warm-orange {
+  background-color: #d94d2f;
+}
+
+.text-warm-orange {
+  color: #d94d2f;
+}
+
+.hover\:bg-warm-orange-dark:hover {
+  background-color: #c43e22;
+}
+
+.bg-cream-light {
+  background-color: #faf7f2;
+}
+
+.border-cream {
+  border-color: #ebdcd0;
+}
+
+/* Smooth transitions */
+* {
+  box-sizing: border-box;
+}
+
+/* Custom Refined Scrollbar (Thin, Subtle & Non-Intrusive) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d6d3d1 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d6d3d1;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e;
+}

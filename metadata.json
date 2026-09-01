@@ -1,0 +1,8 @@
+{
+  "name": "Remix OFFICIAL: Shey\u0027s Bakery v12",
+  "description": "Artisan bakery homepage for Shey\u0027s Bakery featuring freshly baked pastries, artisanal breads, special offers, category collections, and customer support.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
