@@ -132,9 +132,9 @@ export default function App() {
     let isMounted = true;
 
     const loadData = (force = false) => {
-      // 1. FAST-TRACK PRODUCT CATALOG (Renders storefront in milliseconds)
+      // 1. FAST-TRACK PRODUCT CATALOG (Renders storefront in milliseconds from Supabase)
       fetchSupabaseProducts(force).then((prods) => {
-        if (!isMounted || !prods || prods.length === 0) return;
+        if (!isMounted || prods === null) return;
         const cleanProds = deduplicateById(prods);
         setProducts(cleanProds);
         saveProductsToStorage(cleanProds);
@@ -148,7 +148,7 @@ export default function App() {
       // 2. LOAD REMAINING MASTER DATA (Orders, Hubs, Blackouts, Archives)
       loadInitialMasterDataFromSupabase(force).then((data) => {
         if (!isMounted) return;
-        if (data.products !== undefined && data.products.length > 0) {
+        if (data.products !== undefined && data.products !== null) {
           const cleanProds = deduplicateById(data.products);
           setProducts(cleanProds);
           setSelectedProduct((prev) => {
@@ -160,7 +160,7 @@ export default function App() {
         if (data.orders !== undefined) {
           setOrders(deduplicateById(data.orders));
         }
-        if (data.hubs !== undefined && data.hubs.length > 0) {
+        if (data.hubs !== undefined) {
           setHubs(deduplicateById(data.hubs));
         }
         if (data.blackouts !== undefined) {

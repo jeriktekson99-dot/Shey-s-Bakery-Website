@@ -1,6 +1,5 @@
 import { Product } from '../types';
 import { AdminOrder, AdminProduct, BakeryHubLocation, BlackoutDate, ArchivedItem, normalizeOrderStatus } from '../components/admin/types';
-import { PRODUCTS } from './bakeryData';
 import { 
   fetchSupabaseProducts, 
   fetchSupabaseOrders, 
@@ -12,32 +11,7 @@ import {
 } from '../services/supabaseService';
 import { isSupabaseConfigured, initSupabaseFromRemote } from '../lib/supabase';
 
-export const DEFAULT_BAKERY_HUBS: BakeryHubLocation[] = [
-  {
-    id: 'hub-1',
-    name: 'Main Bakery Flagship Kitchen',
-    address: '124 J.P. Laurel Ave, Bajada, Davao City',
-    hours: 'Daily: 7:00 AM – 8:00 PM',
-    phone: '+63 (082) 224-8891',
-    isActive: true
-  },
-  {
-    id: 'hub-2',
-    name: 'Matina Artisan Collection Hub',
-    address: 'G/F Matina Town Square, McArthur Hwy, Matina, Davao City',
-    hours: 'Mon – Sat: 8:00 AM – 9:00 PM',
-    phone: '+63 (082) 297-3304',
-    isActive: true
-  },
-  {
-    id: 'hub-3',
-    name: 'Lanang Premier Pickup Station',
-    address: 'Lanang Business Park, Lanang, Davao City',
-    hours: 'Tue – Sun: 9:00 AM – 7:00 PM',
-    phone: '+63 (082) 305-1192',
-    isActive: true
-  }
-];
+export const DEFAULT_BAKERY_HUBS: BakeryHubLocation[] = [];
 
 const STORAGE_KEYS = {
   PRODUCTS: 'sheys_bakery_products_v3',
@@ -142,7 +116,7 @@ export function adminProductToProduct(ap: AdminProduct, originalProd?: Product):
   };
 }
 
-// Build initial products from LOCAL storage or default bakeryData.ts catalog
+// Build initial products from LOCAL storage or empty array
 export function getInitialProducts(): Product[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
@@ -168,18 +142,11 @@ export function getInitialProducts(): Product[] {
       }
     }
   } catch (e) {
-    console.warn('Failed to load products from localStorage, falling back to default catalog', e);
+    console.warn('Failed to load products from localStorage', e);
   }
 
-  // Always return the complete default bakery catalog so the storefront is never empty
-  return PRODUCTS.map((p) => ({
-    ...p,
-    category: normalizeProductCategory(p.category),
-    basePrice: p.price,
-    inStock: p.availability !== 'Sold Out',
-    boxVariants: (p.boxVariants || p.variants || ['Box of 10', 'Box of 15', 'Box of 20']) as any,
-    variants: (p.variants || p.boxVariants || ['Box of 10', 'Box of 15', 'Box of 20']) as any
-  }));
+  // Do not preload mock placeholder products; wait for Supabase or return empty array
+  return [];
 }
 
 // Build initial orders (loads real customer orders or empty array)
@@ -226,20 +193,24 @@ export function getInitialArchivedItems(): ArchivedItem[] {
   return [];
 }
 
-// Build initial hubs (returns authentic Shey's Bakery Davao hubs)
+// Build initial hubs (returns stored hubs or empty array)
 export function getInitialHubs(): BakeryHubLocation[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEYS.HUBS);
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return deduplicateById(parsed);
+        // Filter out legacy mock placeholder hubs
+        const realHubs = parsed.filter((h: any) => h && h.id && !['hub-1', 'hub-2', 'hub-3'].includes(h.id));
+        if (realHubs.length > 0) {
+          return deduplicateById(realHubs);
+        }
       }
     }
   } catch (e) {
     console.warn('Failed to load hubs from localStorage', e);
   }
-  return DEFAULT_BAKERY_HUBS;
+  return [];
 }
 
 // Build initial blackout dates (loads real blackout rules or empty array)

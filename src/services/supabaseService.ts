@@ -19,7 +19,6 @@ import {
   normalizeOrderStatus 
 } from '../components/admin/types';
 import { normalizeProductCategory } from '../data/bakeryStore';
-import { PRODUCTS } from '../data/bakeryData';
 
 // Safe query execution helper with robust timeout management
 async function executeWithTimeout<T>(
@@ -60,42 +59,8 @@ export function mapSupabaseRowToProduct(row: any): Product {
   const category = normalizeProductCategory(row.category || row.type || row.collection || row.tag || 'Pastries');
   const nameLower = String(row.name || row.title || '').toLowerCase();
   const rawId = String(row.id || row.product_id || row.uuid || '');
-  const matchingPreset = PRODUCTS.find(p => p.id === rawId || p.name.toLowerCase() === (row.name || '').toLowerCase());
 
-  // Intelligent fallback image according to product name and bakery category
-  let defaultFallbackImg = matchingPreset?.image || 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
-  if (!matchingPreset) {
-    if (nameLower.includes('brownie')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('crinkle') || nameLower.includes('cookie')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('donut') || nameLower.includes('doughnut')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1527515862127-a4fc05baf7a5?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('muffin')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1586985289688-ca3cf47d3e6e?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('cinnamon') || nameLower.includes('bun')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('hopia')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('mamon') || nameLower.includes('ensaymada')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1623334044303-241021148842?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('egg pie') || nameLower.includes('pineapple pie') || nameLower.includes('pie') || nameLower.includes('tart')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1519869325930-281384150729?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('cake') || nameLower.includes('yema')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('pianono') || nameLower.includes('inutak')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=800&q=80';
-    } else if (nameLower.includes('monay') || nameLower.includes('putok') || nameLower.includes('bread') || nameLower.includes('kababayan')) {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1549931319-a545dcf3bc73?auto=format&fit=crop&w=800&q=80';
-    } else if (category === 'Pies & Tarts') {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1519869325930-281384150729?auto=format&fit=crop&w=800&q=80';
-    } else if (category === 'Breads') {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
-    } else if (category === 'Specialties & Snacks') {
-      defaultFallbackImg = 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=800&q=80';
-    }
-  }
-
+  // Exact image extraction without injecting hardcoded mock product photos
   const rawImage = 
     row.image || 
     row.image_url || 
@@ -111,28 +76,26 @@ export function mapSupabaseRowToProduct(row: any): Product {
     row.product_image ||
     (Array.isArray(row.images) && row.images[0]) || 
     (Array.isArray(row.gallery_images) && row.gallery_images[0]) ||
-    defaultFallbackImg;
+    '';
 
   const mainImage = rawImage;
 
-  let imagesList = [mainImage];
+  let imagesList = mainImage ? [mainImage] : [];
   if (Array.isArray(row.images) && row.images.length > 0) {
-    imagesList = row.images;
+    imagesList = row.images.filter(Boolean);
   } else if (Array.isArray(row.gallery_images) && row.gallery_images.length > 0) {
-    imagesList = row.gallery_images;
+    imagesList = row.gallery_images.filter(Boolean);
   } else if (typeof row.images === 'string' && row.images.trim()) {
     try {
       if (row.images.startsWith('[')) {
         const parsed = JSON.parse(row.images);
-        if (Array.isArray(parsed) && parsed.length > 0) imagesList = parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) imagesList = parsed.filter(Boolean);
       } else {
         imagesList = row.images.split(',').map((s: string) => s.trim()).filter(Boolean);
       }
     } catch {
       imagesList = [row.images];
     }
-  } else if (matchingPreset?.galleryImages && matchingPreset.galleryImages.length > 0) {
-    imagesList = matchingPreset.galleryImages;
   }
 
   let detailsList = [
