@@ -1,7 +1,9 @@
+import { getSupabaseCredentials } from './supabase';
+
 /**
  * Image optimization & Egress reduction utilities:
  * 1. Automatic client-side canvas resizing and WebP/JPEG compression before saving or uploading.
- * 2. Supabase Storage Image Transformation CDN parameterization (/render/image/public).
+ * 2. High-speed direct image URL resolver for Supabase Storage, CDN, and Google Drive.
  * 3. Cache-Control configuration helpers.
  */
 
@@ -113,10 +115,12 @@ export async function compressAndResizeImage(
 export const DEFAULT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
 
 /**
- * Optimizes an image URL for on-the-fly CDN transformation:
- * - Supabase Storage Image Transformation service (/render/image/public/...)
- * - Unsplash image sizing params
- * Guaranteed to NEVER return an empty string "" to avoid browser reload warnings.
+ * Optimizes and resolves an image URL:
+ * - Direct Supabase Storage URLs: Serves direct public object CDN without triggering paid transformation 404s.
+ * - Resolves relative storage bucket paths (e.g. "products/croissant.jpg" or "bakery-assets/mango.png").
+ * - Google Drive links: Converts view/preview links into direct high-speed image streams.
+ * - Unsplash URLs: Automatically applies responsive sizing.
+ * - Guaranteed to NEVER return an empty string "" to avoid browser reload warnings.
  */
 export function getOptimizedImageUrl(
   url?: string | null,
@@ -132,30 +136,64 @@ export function getOptimizedImageUrl(
     return DEFAULT_FALLBACK_IMAGE;
   }
 
-  const { width = 600, quality = 75, format = 'origin', resize = 'cover' } = options || {};
+  const cleanUrl = url.trim();
 
-  // 1. Supabase Storage URLs - transform using Supabase Image Transformation CDN
-  if (url.includes('.supabase.co/storage/v1/object/public/')) {
-    const renderUrl = url.replace(
-      '/storage/v1/object/public/',
-      '/storage/v1/render/image/public/'
-    );
-    const separator = renderUrl.includes('?') ? '&' : '?';
-    return `${renderUrl}${separator}width=${width}&quality=${quality}&resize=${resize}&format=${format}`;
+  // 1. Data URLs and Blob URLs - return immediately
+  if (cleanUrl.startsWith('data:') || cleanUrl.startsWith('blob:')) {
+    return cleanUrl;
   }
 
-  // 2. Unsplash URLs
-  if (url.includes('images.unsplash.com')) {
+  // 2. Google Drive Share Links -> Convert to direct CDN image source
+  if (cleanUrl.includes('drive.google.com') || cleanUrl.includes('docs.google.com')) {
+    const fileIdMatch = cleanUrl.match(/\/d\/([a-zA-Z0-9_-]+)/) || cleanUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (fileIdMatch && fileIdMatch[1]) {
+      return `https://lh3.googleusercontent.com/d/${fileIdMatch[1]}`;
+    }
+  }
+
+  // 3. Supabase Direct Storage URLs
+  // Standard public object URLs (/storage/v1/object/public/...) work on all Supabase projects (free & pro).
+  // We strictly preserve /object/public/ to avoid 404 errors on projects without paid image transformations.
+  if (cleanUrl.includes('.supabase.co/storage/v1/object/public/') || cleanUrl.includes('.supabase.in/storage/v1/object/public/')) {
+    return cleanUrl;
+  }
+
+  // If a render URL was previously stored, convert back to reliable object/public/
+  if (cleanUrl.includes('/storage/v1/render/image/public/')) {
+    return cleanUrl.replace('/storage/v1/render/image/public/', '/storage/v1/object/public/').split('?')[0];
+  }
+
+  // 4. Relative Supabase Storage Paths (e.g. "products/croissant.jpg" or "/storage/v1/object/public/...")
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://') && !cleanUrl.startsWith('/src/') && !cleanUrl.startsWith('/assets/')) {
+    const { url: supabaseUrl } = getSupabaseCredentials();
+    if (supabaseUrl) {
+      const baseUrl = supabaseUrl.replace(/\/+$/, '');
+      if (cleanUrl.startsWith('/storage/v1/object/public/')) {
+        return `${baseUrl}${cleanUrl}`;
+      }
+      if (cleanUrl.startsWith('storage/v1/object/public/')) {
+        return `${baseUrl}/${cleanUrl}`;
+      }
+      // If path specifies bucket or folder (e.g. "products/image.jpg" or "bakery-assets/image.jpg")
+      const bucketPath = cleanUrl.startsWith('/') ? cleanUrl.slice(1) : cleanUrl;
+      return `${baseUrl}/storage/v1/object/public/${bucketPath}`;
+    }
+  }
+
+  const { width = 600, quality = 75 } = options || {};
+
+  // 5. Unsplash URLs
+  if (cleanUrl.includes('images.unsplash.com')) {
     try {
-      const parsed = new URL(url);
+      const parsed = new URL(cleanUrl);
       parsed.searchParams.set('w', String(width));
       parsed.searchParams.set('q', String(quality));
       parsed.searchParams.set('auto', 'format');
       return parsed.toString();
     } catch {
-      return url;
+      return cleanUrl;
     }
   }
 
-  return url;
+  return cleanUrl;
 }

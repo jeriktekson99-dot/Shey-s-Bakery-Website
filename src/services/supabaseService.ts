@@ -59,50 +59,61 @@ export function mapSupabaseRowToProduct(row: any): Product {
 
   const category = normalizeProductCategory(row.category || row.type || row.collection || row.tag || 'Pastries');
   const nameLower = String(row.name || row.title || '').toLowerCase();
+  const rawId = String(row.id || row.product_id || row.uuid || '');
+  const matchingPreset = PRODUCTS.find(p => p.id === rawId || p.name.toLowerCase() === (row.name || '').toLowerCase());
 
   // Intelligent fallback image according to product name and bakery category
-  let defaultFallbackImg = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
-  if (nameLower.includes('brownie')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('crinkle') || nameLower.includes('cookie')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('donut') || nameLower.includes('doughnut')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1527515862127-a4fc05baf7a5?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('muffin')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1586985289688-ca3cf47d3e6e?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('cinnamon') || nameLower.includes('bun')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('hopia')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('mamon') || nameLower.includes('ensaymada')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1623334044303-241021148842?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('egg pie') || nameLower.includes('pineapple pie') || nameLower.includes('pie') || nameLower.includes('tart')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1519869325930-281384150729?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('cake') || nameLower.includes('yema')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('pianono') || nameLower.includes('inutak')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=800&q=80';
-  } else if (nameLower.includes('monay') || nameLower.includes('putok') || nameLower.includes('bread') || nameLower.includes('kababayan')) {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1549931319-a545dcf3bc73?auto=format&fit=crop&w=800&q=80';
-  } else if (category === 'Pies & Tarts') {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1519869325930-281384150729?auto=format&fit=crop&w=800&q=80';
-  } else if (category === 'Breads') {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
-  } else if (category === 'Specialties & Snacks') {
-    defaultFallbackImg = 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=800&q=80';
+  let defaultFallbackImg = matchingPreset?.image || 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
+  if (!matchingPreset) {
+    if (nameLower.includes('brownie')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1606313564200-e75d5e30476c?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('crinkle') || nameLower.includes('cookie')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1499636136210-6f4ee915583e?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('donut') || nameLower.includes('doughnut')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1527515862127-a4fc05baf7a5?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('muffin')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1586985289688-ca3cf47d3e6e?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('cinnamon') || nameLower.includes('bun')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('hopia')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('mamon') || nameLower.includes('ensaymada')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1623334044303-241021148842?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('egg pie') || nameLower.includes('pineapple pie') || nameLower.includes('pie') || nameLower.includes('tart')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1519869325930-281384150729?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('cake') || nameLower.includes('yema')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('pianono') || nameLower.includes('inutak')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=800&q=80';
+    } else if (nameLower.includes('monay') || nameLower.includes('putok') || nameLower.includes('bread') || nameLower.includes('kababayan')) {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1549931319-a545dcf3bc73?auto=format&fit=crop&w=800&q=80';
+    } else if (category === 'Pies & Tarts') {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1519869325930-281384150729?auto=format&fit=crop&w=800&q=80';
+    } else if (category === 'Breads') {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';
+    } else if (category === 'Specialties & Snacks') {
+      defaultFallbackImg = 'https://images.unsplash.com/photo-1587314168485-3236d6710814?auto=format&fit=crop&w=800&q=80';
+    }
   }
 
-  const mainImage = 
+  const rawImage = 
     row.image || 
     row.image_url || 
+    row.imageUrl ||
     row.photo || 
     row.photo_url ||
+    row.photoUrl ||
     row.img || 
-    row.picture ||
+    row.picture || 
     row.thumbnail || 
+    row.cover_image ||
+    row.cover_image_url ||
+    row.product_image ||
     (Array.isArray(row.images) && row.images[0]) || 
     (Array.isArray(row.gallery_images) && row.gallery_images[0]) ||
     defaultFallbackImg;
+
+  const mainImage = rawImage;
 
   let imagesList = [mainImage];
   if (Array.isArray(row.images) && row.images.length > 0) {
@@ -120,6 +131,8 @@ export function mapSupabaseRowToProduct(row: any): Product {
     } catch {
       imagesList = [row.images];
     }
+  } else if (matchingPreset?.galleryImages && matchingPreset.galleryImages.length > 0) {
+    imagesList = matchingPreset.galleryImages;
   }
 
   let detailsList = [
@@ -323,17 +336,17 @@ export async function fetchSupabaseProducts(forceRefresh = false): Promise<Produ
   // 2. Direct client fallback with chunked fetching if server proxy fails
   if (!rawProductsData && supabase) {
     try {
-      // Fetch metadata first
+      // Fetch all product columns
       let { data: metaData, error: metaErr } = await executeWithTimeout(
         supabase
           .from('products')
-          .select(PROJECTIONS.STOREFRONT_PRODUCTS)
+          .select('*')
           .limit(500),
         15000
       );
 
       if (metaErr && (metaErr.code === '42P01' || metaErr.message?.toLowerCase().includes('not found') || metaErr.message?.toLowerCase().includes('relation'))) {
-        const fallback = await supabase.from('Products').select(PROJECTIONS.STOREFRONT_PRODUCTS).limit(500);
+        const fallback = await supabase.from('Products').select('*').limit(500);
         if (!fallback.error && Array.isArray(fallback.data)) {
           metaData = fallback.data;
           metaErr = null;

@@ -172,14 +172,14 @@ app.get('/api/supabase/products', async (req, res) => {
   }
 
   try {
-    // Single fast query for products
+    // Single fast query for all product columns including all image fields
     let { data: products, error } = await supabase
       .from('products')
-      .select(PRODUCT_METADATA_COLUMNS)
-      .limit(100);
+      .select('*')
+      .limit(200);
 
     if (error && (error.code === '42P01' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('relation'))) {
-      const fallback1 = await supabase.from('Products').select(PRODUCT_METADATA_COLUMNS).limit(100);
+      const fallback1 = await supabase.from('Products').select('*').limit(200);
       if (!fallback1.error && fallback1.data) {
         products = fallback1.data;
         error = null;
