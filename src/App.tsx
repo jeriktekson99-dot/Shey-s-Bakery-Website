@@ -134,7 +134,7 @@ export default function App() {
     const loadData = (force = false) => {
       // 1. FAST-TRACK PRODUCT CATALOG (Renders storefront in milliseconds)
       fetchSupabaseProducts(force).then((prods) => {
-        if (!isMounted || !prods) return;
+        if (!isMounted || !prods || prods.length === 0) return;
         const cleanProds = deduplicateById(prods);
         setProducts(cleanProds);
         saveProductsToStorage(cleanProds);

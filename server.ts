@@ -144,8 +144,8 @@ app.get('/api/supabase/status', async (req, res) => {
   }
 });
 
-// Optimized projection to fetch all product data efficiently with images
-const PRODUCT_METADATA_COLUMNS = 'id, name, category, price, base_price, original_price, box_variants, lead_time, prep_time, in_stock, availability, badge, rating, reviews_count, is_new, allergens, description, details, storage_instructions, reheating_instructions, sku, origin, daily_cap';
+// Optimized projection to fetch all product data efficiently in a single query
+const PRODUCT_METADATA_COLUMNS = 'id, name, category, price, base_price, original_price, image, images, gallery_images, box_variants, lead_time, prep_time, in_stock, availability, badge, rating, reviews_count, is_new, allergens, description, details, storage_instructions, reheating_instructions, sku, origin, daily_cap';
 
 let cachedProducts: any[] | null = null;
 let lastProductsCacheTime = 0;
@@ -172,65 +172,31 @@ app.get('/api/supabase/products', async (req, res) => {
   }
 
   try {
-    // 1. Fetch metadata
-    let { data: metadata, error } = await supabase
+    // Single fast query for products
+    let { data: products, error } = await supabase
       .from('products')
       .select(PRODUCT_METADATA_COLUMNS)
-      .limit(500);
+      .limit(100);
 
     if (error && (error.code === '42P01' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('relation'))) {
-      const fallback1 = await supabase.from('Products').select(PRODUCT_METADATA_COLUMNS).limit(500);
+      const fallback1 = await supabase.from('Products').select(PRODUCT_METADATA_COLUMNS).limit(100);
       if (!fallback1.error && fallback1.data) {
-        metadata = fallback1.data;
+        products = fallback1.data;
         error = null;
       }
     }
 
-    if (error || !metadata) {
+    if (error || !products) {
       if (cachedProducts) {
         return res.json({ products: cachedProducts, cached: true });
       }
       return res.status(500).json({ error: error?.message || 'Failed to query products', products: [] });
     }
 
-    // 2. Fetch images in parallel chunks to avoid Supabase row-size statement timeouts
-    const chunkSize = 8;
-    const chunkCount = Math.ceil(metadata.length / chunkSize) || 3;
-    const imagePromises: Promise<any>[] = [];
-
-    for (let i = 0; i < chunkCount; i++) {
-      imagePromises.push(
-        (async () => {
-          try {
-            const res = await supabase
-              .from('products')
-              .select('id, image')
-              .range(i * chunkSize, (i + 1) * chunkSize - 1);
-            return res.data || [];
-          } catch {
-            return [];
-          }
-        })()
-      );
-    }
-
-    const imageChunks = await Promise.all(imagePromises);
-    const imageMap = new Map<string, string>();
-    imageChunks.flat().forEach((item: any) => {
-      if (item && item.id && item.image) {
-        imageMap.set(item.id, item.image);
-      }
-    });
-
-    const fullProducts = metadata.map((prod: any) => ({
-      ...prod,
-      image: imageMap.get(prod.id) || prod.image || null
-    }));
-
-    cachedProducts = fullProducts;
+    cachedProducts = products;
     lastProductsCacheTime = Date.now();
 
-    return res.json({ products: fullProducts, cached: false });
+    return res.json({ products, cached: false });
   } catch (err: any) {
     if (cachedProducts) {
       return res.json({ products: cachedProducts, cached: true });
