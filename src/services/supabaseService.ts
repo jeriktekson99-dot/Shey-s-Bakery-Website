@@ -19,6 +19,7 @@ import {
   normalizeOrderStatus 
 } from '../components/admin/types';
 import { normalizeProductCategory } from '../data/bakeryStore';
+import { PRODUCTS } from '../data/bakeryData';
 
 // Safe query execution helper with robust timeout management
 async function executeWithTimeout<T>(
@@ -347,8 +348,14 @@ export async function fetchSupabaseProducts(forceRefresh = false): Promise<Produ
     }
   }
 
-  if (rawProductsData === null) {
-    return null;
+  if (rawProductsData === null || rawProductsData.length === 0) {
+    // If Supabase is connected but the products table has 0 rows, auto-seed the default catalog
+    if (supabase && rawProductsData !== null && rawProductsData.length === 0) {
+      syncAllLocalDataToSupabase(PRODUCTS, [], [], [], []).catch((e) => {
+        console.info('[Supabase] Auto-seed background notice:', e);
+      });
+    }
+    return PRODUCTS;
   }
 
   const mapped: Product[] = rawProductsData.map(mapSupabaseRowToProduct);

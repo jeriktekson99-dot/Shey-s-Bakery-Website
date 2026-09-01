@@ -142,57 +142,36 @@ export function adminProductToProduct(ap: AdminProduct, originalProd?: Product):
   };
 }
 
-// List of default mock product IDs from bakeryData.ts
-const MOCK_PRODUCT_IDS = new Set([
-  'prod-mango',
-  'prod-1', 'prod-2', 'prod-3', 'prod-4', 'prod-5', 'prod-6', 'prod-7', 'prod-8', 'prod-9',
-  'prod-10', 'prod-11', 'prod-12', 'prod-13', 'prod-14', 'prod-15', 'prod-16', 'prod-17',
-  'prod-18', 'prod-19', 'prod-20', 'prod-21', 'prod-22'
-]);
-
-// Build initial products from LOCAL or bakeryData.ts
+// Build initial products from LOCAL storage or default bakeryData.ts catalog
 export function getInitialProducts(): Product[] {
-  const isConnected = isSupabaseConfigured();
-
   try {
     const stored = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
     if (stored) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // If Supabase is connected, filter out mock product placeholders so they don't override backend
-        const filtered = isConnected
-          ? parsed.filter((item: any) => item && item.id && !MOCK_PRODUCT_IDS.has(item.id))
-          : parsed;
-
-        if (filtered.length > 0) {
-          const mapped = filtered.map((item: any) => {
-            if (item.basePrice !== undefined && item.price === undefined) {
-              return adminProductToProduct(item);
-            }
-            return {
-              ...item,
-              category: normalizeProductCategory(item.category),
-              inStock: item.inStock !== undefined ? item.inStock : (item.availability !== 'Sold Out'),
-              boxVariants: item.boxVariants || item.variants || ['Box of 10', 'Box of 15', 'Box of 20'],
-              variants: item.variants || item.boxVariants || ['Box of 10', 'Box of 15', 'Box of 20']
-            };
-          });
-          return deduplicateById(mapped);
-        } else if (isConnected) {
-          // If Supabase is connected and local storage only had mock items, return empty array to await Supabase payload
-          return [];
+        const mapped = parsed.map((item: any) => {
+          if (item.basePrice !== undefined && item.price === undefined) {
+            return adminProductToProduct(item);
+          }
+          return {
+            ...item,
+            category: normalizeProductCategory(item.category),
+            inStock: item.inStock !== undefined ? item.inStock : (item.availability !== 'Sold Out'),
+            boxVariants: item.boxVariants || item.variants || ['Box of 10', 'Box of 15', 'Box of 20'],
+            variants: item.variants || item.boxVariants || ['Box of 10', 'Box of 15', 'Box of 20']
+          };
+        });
+        const clean = deduplicateById(mapped);
+        if (clean.length > 0) {
+          return clean;
         }
       }
     }
   } catch (e) {
-    console.warn('Failed to load products from localStorage', e);
+    console.warn('Failed to load products from localStorage, falling back to default catalog', e);
   }
 
-  // If Supabase is configured, do not fall back to mock PRODUCTS
-  if (isConnected) {
-    return [];
-  }
-
+  // Always return the complete default bakery catalog so the storefront is never empty
   return PRODUCTS.map((p) => ({
     ...p,
     category: normalizeProductCategory(p.category),
