@@ -233,29 +233,10 @@ USING (true)
 WITH CHECK (true);
 
 -- ==============================================================================
--- 5. INITIAL MASTER DATA (AUTHENTIC SHEY'S BAKERY DAVAO PRODUCTS, HUBS & SETTINGS)
+-- 5. INITIAL MASTER DATA (SETTINGS)
 -- ==============================================================================
-
--- SEED AUTHENTIC STORE PRODUCTS
-INSERT INTO public.products (
-    id, name, category, base_price, price, original_price, image, 
-    box_variants, lead_time, in_stock, availability, allergens, description, 
-    badge, rating, reviews_count, is_new
-) VALUES
-('prod-mango', 'Mango Tango', 'Pies & Tarts', 1275.00, 1275.00, 1450.00, 'https://images.unsplash.com/photo-1578985545062-69928b1d9587?auto=format&fit=crop&w=800&q=80', ARRAY['Box of 10', 'Box of 15', 'Box of 20'], '48 hrs', true, 'In Stock', ARRAY['Wheat (Gluten)', 'Dairy (Fresh Milk & Cream)', 'Eggs'], 'Enjoy layers of sweet Guimaras mango cubes, moist vanilla sponge cake, and delicate mousse, covered with light chantilly cream.', 'Bestseller Cake', 4.98, 184, true),
-('prod-1', 'Signature French Butter Croissant (Pack of 3)', 'Pastries', 320.00, 320.00, 380.00, 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=800&q=80', ARRAY['Box of 10', 'Box of 15', 'Box of 20'], 'Freshly Baked Daily', true, 'In Stock', ARRAY['Wheat', 'Dairy', 'Eggs'], 'Flaky, golden, 72-layer butter croissants baked fresh every morning with 100% French Normandy butter.', 'Buy 2 Take 1 Special', 4.90, 342, true),
-('prod-2', 'Artisan Country Sourdough Loaf', 'Breads', 280.00, 280.00, NULL, 'https://images.unsplash.com/photo-1589367920969-ab8e050bbb04?auto=format&fit=crop&w=800&q=80', ARRAY[]::TEXT[], '36-hour wild yeast fermentation', true, 'In Stock', ARRAY['Wheat (Gluten)'], 'Naturally fermented for 36 hours. Crisp, dark crust with a soft, airy, delightfully chewy interior.', 'Baker Choice', 4.92, 195, false),
-('prod-3', 'Premium Ube Cheese Ensaymada (Box of 4)', 'Pastries', 450.00, 450.00, NULL, 'https://images.unsplash.com/photo-1623334044303-241021148842?auto=format&fit=crop&w=800&q=80', ARRAY['Box of 10', 'Box of 15', 'Box of 20'], 'Made to order', true, 'In Stock', ARRAY['Wheat', 'Dairy', 'Eggs'], 'Rich, pillowy sweet brioche topped with real Halaya Ube, pure butter spread, and generously grated Queso de Bola.', 'Bestseller', 4.95, 230, false),
-('prod-4', 'San Sebastian Basque Burnt Cheesecake (6")', 'Pies & Tarts', 980.00, 980.00, NULL, 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?auto=format&fit=crop&w=800&q=80', ARRAY['Box of 10'], 'Requires 4-hour chill time', true, 'In Stock', ARRAY['Dairy', 'Eggs'], 'Silky smooth, caramelized top with a rich creamy molten center. Crafted with imported cream cheese and Madagascar vanilla.', 'Signature Cake', 4.96, 178, false),
-('prod-5', 'Dark Chocolate Pain au Chocolat (Box of 4)', 'Pastries', 390.00, 390.00, NULL, 'https://images.unsplash.com/photo-1608198093002-ad4e005484ec?auto=format&fit=crop&w=800&q=80', ARRAY['Box of 10', 'Box of 15'], '24 hrs', true, 'In Stock', ARRAY['Wheat', 'Dairy', 'Eggs', 'Soy'], 'Laminated flaky pastry dough rolled around double batons of 70% Malagos & Valrhona dark chocolate.', 'Popular', 4.88, 140, false)
-ON CONFLICT (id) DO NOTHING;
-
--- SEED BAKERY HUBS
-INSERT INTO public.bakery_hubs (id, name, address, hours, phone, is_active) VALUES
-('hub-1', 'Main Bakery Flagship Kitchen', '124 J.P. Laurel Ave, Bajada, Davao City', '7:00 AM - 8:00 PM Daily', '+63 (082) 224-8891', true),
-('hub-2', 'Matina Artisan Collection Hub', 'G/F Matina Town Square, McArthur Hwy, Davao City', '8:00 AM - 9:00 PM Mon-Sat', '+63 (082) 297-3304', true),
-('hub-3', 'Lanang Premier Pickup Station', 'Lanang Business Park, Lanang, Davao City', '9:00 AM - 7:00 PM Tue-Sun', '+63 (082) 305-1192', true)
-ON CONFLICT (id) DO NOTHING;
+-- Real products and bakery hubs should be created via the Admin Dashboard or imported directly.
+-- No fake or placeholder products/hubs are inserted here.
 
 -- SEED STORE SETTINGS
 INSERT INTO public.store_settings (key, value) VALUES

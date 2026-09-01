@@ -28,20 +28,12 @@ export const ProductDetailsAdminView: React.FC<ProductDetailsAdminViewProps> = (
   onDeleteProduct
 }) => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  // Gallery images
+  // Gallery images (strictly the real uploaded images of the product)
   const initialImages = (product.images && product.images.length > 0)
     ? product.images
     : product.image
-    ? [
-        product.image,
-        'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1589367920969-ab8e050bbb04?auto=format&fit=crop&w=1000&q=80'
-      ]
-    : [
-        'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=1000&q=80',
-        'https://images.unsplash.com/photo-1555507036-ab1f4038808a?auto=format&fit=crop&w=1000&q=80'
-      ];
+    ? [product.image]
+    : [];
 
   const images = initialImages;
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number>(0);

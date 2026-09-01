@@ -362,13 +362,13 @@ export async function fetchSupabaseProducts(forceRefresh = false): Promise<Produ
   }
 
   if (rawProductsData === null || rawProductsData.length === 0) {
-    // If Supabase is connected but the products table has 0 rows, auto-seed the default catalog
-    if (supabase && rawProductsData !== null && rawProductsData.length === 0) {
-      syncAllLocalDataToSupabase(PRODUCTS, [], [], [], []).catch((e) => {
-        console.info('[Supabase] Auto-seed background notice:', e);
-      });
+    // If Supabase returns an empty array, do NOT inject fake/placeholder products.
+    // Return empty array if the database table is intentionally empty or has 0 products.
+    if (Array.isArray(rawProductsData)) {
+      setInCache(cacheKey, []);
+      return [];
     }
-    return PRODUCTS;
+    return null;
   }
 
   const mapped: Product[] = rawProductsData.map(mapSupabaseRowToProduct);
