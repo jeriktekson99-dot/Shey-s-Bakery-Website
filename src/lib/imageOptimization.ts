@@ -1,10 +1,11 @@
-import { getSupabaseCredentials } from './supabase';
+import { getSupabaseClient, getSupabaseCredentials } from './supabase';
 
 /**
  * Image optimization & Egress reduction utilities:
  * 1. Automatic client-side canvas resizing and WebP/JPEG compression before saving or uploading.
- * 2. High-speed direct image URL resolver for Supabase Storage, CDN, and Google Drive.
- * 3. Cache-Control configuration helpers.
+ * 2. Direct Supabase Storage bucket upload with auto-compression (<100KB) and public URL generation.
+ * 3. High-speed direct image URL resolver for Supabase Storage, CDN, and Google Drive.
+ * 4. Cache-Control configuration helpers.
  */
 
 export interface ImageOptimizationOptions {
@@ -16,21 +17,21 @@ export interface ImageOptimizationOptions {
 }
 
 const DEFAULT_OPTIONS: ImageOptimizationOptions = {
-  maxWidth: 1024,
-  maxHeight: 1024,
-  quality: 0.8,
+  maxWidth: 800,
+  maxHeight: 800,
+  quality: 0.78,
   format: 'image/webp',
-  maxSizeBytes: 2 * 1024 * 1024 // 2MB hard ceiling before compression
+  maxSizeBytes: 100 * 1024 // Strict <100KB target size
 };
 
 /**
  * Resizes and compresses an image File or Data URL to minimize egress and storage size.
- * Shrinks 5MB-10MB camera uploads down to 50KB-150KB without noticeable quality loss.
+ * Compresses camera uploads down to 30KB-80KB WebP without visible quality loss.
  */
 export async function compressAndResizeImage(
   fileOrDataUrl: File | string,
   options: ImageOptimizationOptions = {}
-): Promise<{ dataUrl: string; sizeBytes: number; originalSizeBytes: number }> {
+): Promise<{ dataUrl: string; blob: Blob; sizeBytes: number; originalSizeBytes: number }> {
   const opts = { ...DEFAULT_OPTIONS, ...options };
 
   return new Promise((resolve, reject) => {
@@ -77,13 +78,21 @@ export async function compressAndResizeImage(
           compressedDataUrl = canvas.toDataURL('image/jpeg', opts.quality);
         }
 
-        const sizeBytes = Math.round((compressedDataUrl.length * 3) / 4);
+        canvas.toBlob(
+          (blob) => {
+            const finalBlob = blob || new Blob([], { type: targetFormat });
+            const sizeBytes = finalBlob.size || Math.round((compressedDataUrl.length * 3) / 4);
 
-        resolve({
-          dataUrl: compressedDataUrl,
-          sizeBytes,
-          originalSizeBytes: originalSizeBytes || sizeBytes
-        });
+            resolve({
+              dataUrl: compressedDataUrl,
+              blob: finalBlob,
+              sizeBytes,
+              originalSizeBytes: originalSizeBytes || sizeBytes
+            });
+          },
+          targetFormat,
+          opts.quality
+        );
       } catch (err) {
         reject(err);
       }
@@ -110,6 +119,78 @@ export async function compressAndResizeImage(
       reader.readAsDataURL(fileOrDataUrl);
     }
   });
+}
+
+/**
+ * Uploads an image directly to the Supabase Storage bucket.
+ * 1. Automatically compresses image to lightweight WebP (<100KB).
+ * 2. Uploads binary blob to Supabase Storage bucket (tries 'product-images', 'products', 'images', 'bakery-assets').
+ * 3. Returns the clean, direct public URL (e.g., https://[project].supabase.co/storage/v1/object/public/product-images/...).
+ */
+export async function uploadImageToSupabaseStorage(
+  fileOrDataUrl: File | string,
+  preferredBucket = 'product-images'
+): Promise<string> {
+  // If it's already a clean external URL (not data: or blob:), return it directly
+  if (typeof fileOrDataUrl === 'string') {
+    const trimmed = fileOrDataUrl.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+  }
+
+  // 1. Compress image to under 100KB WebP
+  const { dataUrl, blob, sizeBytes } = await compressAndResizeImage(fileOrDataUrl, {
+    maxWidth: 800,
+    maxHeight: 800,
+    quality: 0.78,
+    format: 'image/webp'
+  });
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    console.info('[Supabase Storage] Supabase client not initialized, returning compressed dataUrl');
+    return dataUrl;
+  }
+
+  const filename = `prod_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webp`;
+  const filePath = `catalog/${filename}`;
+
+  const bucketCandidates = [preferredBucket, 'product-images', 'products', 'images', 'bakery-assets', 'public'];
+  // Deduplicate bucket list
+  const uniqueBuckets = Array.from(new Set(bucketCandidates));
+
+  let lastError: any = null;
+
+  for (const bucket of uniqueBuckets) {
+    try {
+      const { error: uploadErr } = await supabase.storage
+        .from(bucket)
+        .upload(filePath, blob, {
+          contentType: 'image/webp',
+          cacheControl: '31536000', // 1 year CDN cache
+          upsert: true
+        });
+
+      if (!uploadErr) {
+        const { data: publicUrlData } = supabase.storage
+          .from(bucket)
+          .getPublicUrl(filePath);
+
+        if (publicUrlData && publicUrlData.publicUrl) {
+          console.info(`[Supabase Storage] Uploaded image (${Math.round(sizeBytes / 1024)}KB) to bucket "${bucket}" -> ${publicUrlData.publicUrl}`);
+          return publicUrlData.publicUrl;
+        }
+      } else {
+        lastError = uploadErr;
+      }
+    } catch (bucketErr) {
+      lastError = bucketErr;
+    }
+  }
+
+  console.warn('[Supabase Storage] Could not upload to storage buckets, using optimized WebP fallback:', lastError?.message || lastError);
+  return dataUrl;
 }
 
 export const DEFAULT_FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=800&q=80';

@@ -19,6 +19,8 @@ import {
 } from './data/bakeryStore';
 import { 
   fetchSupabaseProducts,
+  subscribeToSupabaseProducts,
+  subscribeToSupabaseOrders,
   createSupabaseOrder, 
   updateSupabaseOrderStatus, 
   updateSupabaseOrderPayment, 
@@ -174,6 +176,74 @@ export default function App() {
 
     loadData(false);
 
+    // 3. ENABLE SUPABASE REALTIME (Instant push updates without page reload)
+    const unsubscribeProducts = subscribeToSupabaseProducts(
+      (updatedProduct) => {
+        if (!isMounted) return;
+        setProducts((prev) => {
+          const index = prev.findIndex((p) => p.id === updatedProduct.id);
+          let nextList: Product[];
+          if (index >= 0) {
+            nextList = [...prev];
+            nextList[index] = updatedProduct;
+          } else {
+            nextList = [updatedProduct, ...prev];
+          }
+          const clean = deduplicateById(nextList);
+          saveProductsToStorage(clean);
+          return clean;
+        });
+
+        setSelectedProduct((prev) => {
+          if (prev && prev.id === updatedProduct.id) {
+            return updatedProduct;
+          }
+          return prev;
+        });
+      },
+      (deletedId) => {
+        if (!isMounted) return;
+        setProducts((prev) => {
+          const nextList = prev.filter((p) => p.id !== deletedId);
+          saveProductsToStorage(nextList);
+          return nextList;
+        });
+        setSelectedProduct((prev) => {
+          if (prev && prev.id === deletedId) {
+            return null;
+          }
+          return prev;
+        });
+      }
+    );
+
+    const unsubscribeOrders = subscribeToSupabaseOrders(
+      (updatedOrder) => {
+        if (!isMounted) return;
+        setOrders((prev) => {
+          const index = prev.findIndex((o) => o.id === updatedOrder.id || o.orderNumber === updatedOrder.orderNumber);
+          let nextList: AdminOrder[];
+          if (index >= 0) {
+            nextList = [...prev];
+            nextList[index] = updatedOrder;
+          } else {
+            nextList = [updatedOrder, ...prev];
+          }
+          const clean = deduplicateById(nextList);
+          saveOrdersToStorage(clean);
+          return clean;
+        });
+      },
+      (deletedId) => {
+        if (!isMounted) return;
+        setOrders((prev) => {
+          const nextList = prev.filter((o) => o.id !== deletedId);
+          saveOrdersToStorage(nextList);
+          return nextList;
+        });
+      }
+    );
+
     const handleConfigChange = () => {
       loadData(true);
     };
@@ -182,6 +252,8 @@ export default function App() {
 
     return () => {
       isMounted = false;
+      unsubscribeProducts();
+      unsubscribeOrders();
       window.removeEventListener('sheys_supabase_config_updated', handleConfigChange);
     };
   }, []);

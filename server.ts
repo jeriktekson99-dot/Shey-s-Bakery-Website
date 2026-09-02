@@ -145,11 +145,18 @@ app.get('/api/supabase/status', async (req, res) => {
 });
 
 // Optimized projection to fetch all product data efficiently in a single query
-const PRODUCT_METADATA_COLUMNS = 'id, name, category, price, base_price, original_price, image, images, gallery_images, box_variants, lead_time, prep_time, in_stock, availability, badge, rating, reviews_count, is_new, allergens, description, details, storage_instructions, reheating_instructions, sku, origin, daily_cap';
+const PRODUCT_METADATA_COLUMNS = 'id, name, category, price, base_price, images, box_variants, in_stock, availability, description, created_at, updated_at';
 
 let cachedProducts: any[] | null = null;
 let lastProductsCacheTime = 0;
-const PRODUCTS_CACHE_TTL_MS = 300000; // 5 minutes cache TTL
+const PRODUCTS_CACHE_TTL_MS = 15000; // 15 seconds cache TTL for high freshness
+
+// Invalidate server product cache
+app.post('/api/supabase/invalidate-cache', (req, res) => {
+  cachedProducts = null;
+  lastProductsCacheTime = 0;
+  res.json({ success: true, message: 'Server cache invalidated' });
+});
 
 app.get('/api/supabase/products', async (req, res) => {
   const clientUrl = (req.headers['x-supabase-url'] as string) || '';
@@ -158,7 +165,7 @@ app.get('/api/supabase/products', async (req, res) => {
 
   const forceRefresh = req.query.fresh === 'true';
 
-  res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=600, stale-while-revalidate=1200');
+  res.setHeader('Cache-Control', 'public, max-age=15, s-maxage=30, stale-while-revalidate=60');
 
   if (!forceRefresh && cachedProducts && (Date.now() - lastProductsCacheTime < PRODUCTS_CACHE_TTL_MS)) {
     return res.json({ products: cachedProducts, cached: true });
@@ -172,14 +179,15 @@ app.get('/api/supabase/products', async (req, res) => {
   }
 
   try {
-    // Single fast query for all product columns including all image fields
+    // Single fast query for all product columns with index-assisted sorting
     let { data: products, error } = await supabase
       .from('products')
       .select('*')
-      .limit(200);
+      .order('created_at', { ascending: false })
+      .limit(300);
 
     if (error && (error.code === '42P01' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('relation'))) {
-      const fallback1 = await supabase.from('Products').select('*').limit(200);
+      const fallback1 = await supabase.from('Products').select('*').limit(300);
       if (!fallback1.error && fallback1.data) {
         products = fallback1.data;
         error = null;

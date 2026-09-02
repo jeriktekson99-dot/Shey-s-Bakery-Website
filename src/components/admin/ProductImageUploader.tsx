@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { ImageIcon, ImagePlus, X, Star, AlertCircle, Sparkles } from 'lucide-react';
-import { compressAndResizeImage, DEFAULT_FALLBACK_IMAGE } from '../../lib/imageOptimization';
+import { ImageIcon, ImagePlus, X, Star, AlertCircle, Sparkles, Link, Check } from 'lucide-react';
+import { uploadImageToSupabaseStorage, DEFAULT_FALLBACK_IMAGE } from '../../lib/imageOptimization';
 
 interface ProductImageUploaderProps {
   images: string[];
@@ -15,8 +15,11 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isCompressing, setIsCompressing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string>('');
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showUrlInput, setShowUrlInput] = useState(false);
+  const [customUrl, setCustomUrl] = useState('');
 
   const processFiles = async (files: FileList | File[]) => {
     setUploadError(null);
@@ -27,38 +30,30 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
       return;
     }
 
-    // Limit individual file size to 8MB before compression
-    const oversized = validFiles.find(f => f.size > 8 * 1024 * 1024);
-    if (oversized) {
-      setUploadError(`File "${oversized.name}" exceeds the 8MB initial limit.`);
+    const filesToRead = validFiles.slice(0, Math.max(0, maxImages - images.length));
+    if (filesToRead.length === 0) {
+      setUploadError(`Maximum limit of ${maxImages} images reached.`);
       return;
     }
 
-    if (images.length + validFiles.length > maxImages) {
-      setUploadError(`You can upload a maximum of ${maxImages} images.`);
-    }
-
-    const filesToRead = validFiles.slice(0, Math.max(0, maxImages - images.length));
-    setIsCompressing(true);
+    setIsUploading(true);
+    setUploadStatus(`Optimizing and uploading ${filesToRead.length} photo(s) to Supabase Storage (<100KB)...`);
 
     try {
-      // Compress and resize each image to max 1024x1024 WebP/JPEG (reducing egress by >90%)
-      const compressionPromises = filesToRead.map(async (file) => {
-        const result = await compressAndResizeImage(file, {
-          maxWidth: 1024,
-          maxHeight: 1024,
-          quality: 0.82,
-          format: 'image/webp'
-        });
-        return result.dataUrl;
+      const uploadPromises = filesToRead.map(async (file, idx) => {
+        setUploadStatus(`Uploading image ${idx + 1} of ${filesToRead.length} to bucket (<100KB WebP)...`);
+        const publicUrl = await uploadImageToSupabaseStorage(file, 'product-images');
+        return publicUrl;
       });
 
-      const optimizedImages = await Promise.all(compressionPromises);
-      onChange([...images, ...optimizedImages]);
+      const uploadedUrls = await Promise.all(uploadPromises);
+      const cleanUrls = uploadedUrls.filter(Boolean);
+      onChange([...images, ...cleanUrls]);
     } catch (err: any) {
-      setUploadError(err?.message || 'An error occurred while optimizing images. Please try again.');
+      setUploadError(err?.message || 'Failed to upload images to Supabase Storage. Please try again.');
     } finally {
-      setIsCompressing(false);
+      setIsUploading(false);
+      setUploadStatus('');
     }
   };
 
@@ -67,6 +62,18 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
       processFiles(e.target.files);
       e.target.value = '';
     }
+  };
+
+  const handleAddDirectUrl = () => {
+    if (!customUrl.trim()) return;
+    const url = customUrl.trim();
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      setUploadError('Please enter a valid HTTP/HTTPS image URL.');
+      return;
+    }
+    onChange([...images, url]);
+    setCustomUrl('');
+    setShowUrlInput(false);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -132,19 +139,51 @@ export const ProductImageUploader: React.FC<ProductImageUploaderProps> = ({
           </div>
           <div>
             <p className="text-xs font-mono font-bold tracking-wider uppercase text-[#4a170a]">
-              Drag & Drop Multiple Media Files Here
+              Upload Photos to Supabase Bucket
             </p>
             <p className="text-[11px] font-mono tracking-wide text-stone-500 uppercase mt-1">
-              or click to browse local filesystem (Max 8MB, auto-compressed)
+              Auto-compressed to WebP (&lt;100KB) for instant real-time performance
             </p>
           </div>
         </div>
       </div>
 
-      {isCompressing && (
+      {/* Optional: Add Direct Public Image URL */}
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setShowUrlInput(!showUrlInput)}
+          className="text-xs font-bold text-stone-600 hover:text-[#d01617] flex items-center gap-1.5 transition-colors cursor-pointer"
+        >
+          <Link className="w-3.5 h-3.5" />
+          <span>{showUrlInput ? 'Hide URL Link Input' : '+ Or Paste Direct Image URL'}</span>
+        </button>
+      </div>
+
+      {showUrlInput && (
+        <div className="flex items-center gap-2 p-2.5 rounded-xl bg-stone-50 border border-stone-200 animate-fadeIn">
+          <input
+            type="url"
+            placeholder="https://... (Supabase storage, Google Drive, CDN image link)"
+            value={customUrl}
+            onChange={(e) => setCustomUrl(e.target.value)}
+            className="flex-1 px-3 py-1.5 text-xs rounded-lg border border-stone-300 focus:outline-none focus:border-[#d01617] bg-white text-stone-800"
+          />
+          <button
+            type="button"
+            onClick={handleAddDirectUrl}
+            className="px-3 py-1.5 rounded-lg bg-[#d01617] text-white text-xs font-bold hover:bg-[#b01213] flex items-center gap-1 transition-colors cursor-pointer"
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>Add</span>
+          </button>
+        </div>
+      )}
+
+      {isUploading && (
         <div className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 font-medium animate-pulse">
           <Sparkles className="w-4 h-4 shrink-0 text-[#d01617] animate-spin" />
-          <span>Optimizing and resizing images for low network egress...</span>
+          <span>{uploadStatus || 'Uploading to Supabase Storage (<100KB WebP)...'}</span>
         </div>
       )}
 

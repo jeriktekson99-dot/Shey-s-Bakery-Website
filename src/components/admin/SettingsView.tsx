@@ -21,7 +21,7 @@ interface SettingsViewProps {
   onRefreshProducts?: () => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ onRefreshProducts }) => {
+export const SettingsView: React.FC<SettingsViewProps> = () => {
   // Password change state
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');

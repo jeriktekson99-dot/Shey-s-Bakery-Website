@@ -109,22 +109,16 @@ export const isSupabaseConfigured = (): boolean => {
 
 export const PROJECTIONS = {
   // Storefront Catalog: High-speed select
-  STOREFRONT_PRODUCTS: 'id, name, category, base_price, price, original_price, image, images, box_variants, lead_time, in_stock, availability, badge, rating, reviews_count, is_new, allergens',
+  STOREFRONT_PRODUCTS: 'id, name, category, base_price, price, images, box_variants, description, in_stock, availability, created_at',
   
-  // Full Product Profile (fetched on individual product detail page view)
-  FULL_PRODUCT: 'id, name, category, base_price, price, original_price, image, images, gallery_images, box_variants, lead_time, prep_time, in_stock, availability, allergens, description, details, badge, rating, reviews_count, is_new, storage_instructions, reheating_instructions, sku, origin, daily_cap',
+  // Full Product Profile
+  FULL_PRODUCT: 'id, name, category, base_price, price, images, box_variants, description, in_stock, availability, created_at, updated_at',
 
-  // Live Orders Table: Omit full addresses & heavy payload when rendering tables
+  // Live Orders Table
   ORDERS_LIST: 'id, order_number, customer_name, customer_phone, customer_email, type, payment_method, status, total_amount, items, pickup_hub, delivery_date, target_date, target_time, created_at',
 
   // Recent Streams: Minimal summary row projection
   ORDERS_STREAM: 'id, order_number, customer_name, customer_phone, type, payment_method, status, total_amount, created_at',
-
-  // Hubs
-  HUBS: 'id, name, address, hours, phone, is_active',
-
-  // Blackout Dates
-  BLACKOUTS: 'id, date, reason',
 
   // Archive Vault
   ARCHIVES: 'id, original_id, type, title, reference_number, subtitle, category_or_status, archived_at, archived_by, reason, price_or_amount, tags, original_payload',

@@ -7,6 +7,7 @@ import {
   setInCache, 
   invalidateCache 
 } from '../lib/supabase';
+import { uploadImageToSupabaseStorage } from '../lib/imageOptimization';
 import { Product } from '../types';
 import { 
   AdminOrder, 
@@ -253,8 +254,15 @@ export async function testSupabaseHealth(): Promise<{
   }
 }
 
+// Helper to invalidate server-side in-memory cache
+export function notifyServerCacheInvalidation(): void {
+  if (typeof window !== 'undefined') {
+    fetch('/api/supabase/invalidate-cache', { method: 'POST' }).catch(() => {});
+  }
+}
+
 // ==============================================================================
-// 1. PRODUCTS CRUD (WITH SERVER PROXY FALLBACK & RESILIENT TIMEOUT)
+// 1. PRODUCTS CRUD (FAST-PATH DIRECT QUERY + SERVER FALLBACK + REALTIME)
 // ==============================================================================
 
 export async function fetchSupabaseProducts(forceRefresh = false): Promise<Product[] | null> {
@@ -268,70 +276,64 @@ export async function fetchSupabaseProducts(forceRefresh = false): Promise<Produ
   const supabase = getSupabaseClient();
   const { url, key } = getSupabaseCredentials();
 
-  if (!supabase && !url) {
-    return null;
-  }
-
   let rawProductsData: any[] | null = null;
 
-  // 1. Try Server Proxy First (which stitches metadata and chunked images with in-memory cache)
-  try {
-    const headers: Record<string, string> = {};
-    if (url && key) {
-      headers['x-supabase-url'] = url;
-      headers['x-supabase-key'] = key;
-    }
-    const queryParam = forceRefresh ? '?fresh=true' : '';
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-    const serverRes = await fetch(`/api/supabase/products${queryParam}`, { headers, signal: controller.signal });
-    clearTimeout(timeoutId);
-    if (serverRes.ok) {
-      const json = await serverRes.json();
-      if (Array.isArray(json.products) && json.products.length > 0) {
-        rawProductsData = json.products;
-      }
-    }
-  } catch (err) {
-    console.info('[Supabase] Server proxy unavailable or slow, falling back to direct client');
-  }
-
-  // 2. Direct client fallback with chunked fetching if server proxy fails
-  if (!rawProductsData && supabase) {
+  // 1. FAST-PATH: Direct Client PostgREST Query with Indexed created_at Ordering
+  if (supabase) {
     try {
-      // Fetch all product columns
-      let { data: metaData, error: metaErr } = await executeWithTimeout(
+      const { data, error } = await executeWithTimeout(
         supabase
           .from('products')
           .select('*')
-          .limit(500),
-        15000
+          .order('created_at', { ascending: false })
+          .limit(300),
+        4000 // Fast 4-second timeout for direct query
       );
 
-      if (metaErr && (metaErr.code === '42P01' || metaErr.message?.toLowerCase().includes('not found') || metaErr.message?.toLowerCase().includes('relation'))) {
-        const fallback = await supabase.from('Products').select('*').limit(500);
+      if (!error && Array.isArray(data)) {
+        rawProductsData = data;
+      } else if (error && (error.code === '42P01' || error.message?.toLowerCase().includes('not found') || error.message?.toLowerCase().includes('relation'))) {
+        const fallback = await supabase.from('Products').select('*').limit(300);
         if (!fallback.error && Array.isArray(fallback.data)) {
-          metaData = fallback.data;
-          metaErr = null;
+          rawProductsData = fallback.data;
         }
       }
-
-      if (!metaErr && Array.isArray(metaData)) {
-        rawProductsData = metaData;
-      }
-    } catch (e: any) {
-      console.info('[Supabase] Direct client query notice:', e?.message || 'Using local fallback');
+    } catch (directErr) {
+      console.info('[Supabase] Direct client query notice: switching to server gateway fallback');
     }
   }
 
-  if (rawProductsData === null || rawProductsData.length === 0) {
-    // If Supabase returns an empty array, do NOT inject fake/placeholder products.
-    // Return empty array if the database table is intentionally empty or has 0 products.
-    if (Array.isArray(rawProductsData)) {
-      setInCache(cacheKey, []);
-      return [];
+  // 2. SERVER GATEWAY FALLBACK: If direct client query had network/auth restriction
+  if (rawProductsData === null && (url || supabase)) {
+    try {
+      const headers: Record<string, string> = {};
+      if (url && key) {
+        headers['x-supabase-url'] = url;
+        headers['x-supabase-key'] = key;
+      }
+      const queryParam = forceRefresh ? '?fresh=true' : '';
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const serverRes = await fetch(`/api/supabase/products${queryParam}`, { headers, signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (serverRes.ok) {
+        const json = await serverRes.json();
+        if (Array.isArray(json.products)) {
+          rawProductsData = json.products;
+        }
+      }
+    } catch (err) {
+      console.info('[Supabase] Server gateway fallback finished');
     }
+  }
+
+  if (rawProductsData === null) {
     return null;
+  }
+
+  if (rawProductsData.length === 0) {
+    setInCache(cacheKey, []);
+    return [];
   }
 
   const mapped: Product[] = rawProductsData.map(mapSupabaseRowToProduct);
@@ -350,28 +352,35 @@ export async function createSupabaseProduct(prod: Product | AdminProduct): Promi
     const category = normalizeProductCategory(prod.category);
     const boxVariants = (prod as any).boxVariants || (prod as any).variants || ['Box of 10', 'Box of 15', 'Box of 20'];
 
-    const row = {
+    // If image is a base64 string, upload to storage bucket first
+    let mainImage = prod.image;
+    if (mainImage && (mainImage.startsWith('data:image/') || mainImage.startsWith('blob:'))) {
+      mainImage = await uploadImageToSupabaseStorage(mainImage, 'product-images');
+    }
+
+    const rawImages: string[] = (prod as any).images || [mainImage];
+    const sanitizedImages: string[] = await Promise.all(
+      rawImages.map(async (img) => {
+        if (img && (img.startsWith('data:image/') || img.startsWith('blob:'))) {
+          return await uploadImageToSupabaseStorage(img, 'product-images');
+        }
+        return img;
+      })
+    );
+
+    const finalImages = sanitizedImages.length > 0 ? sanitizedImages : [mainImage];
+
+    const row: any = {
       id: prod.id,
       name: prod.name,
       category,
       base_price: priceVal,
       price: priceVal,
-      original_price: (prod as any).originalPrice || null,
-      image: prod.image,
-      images: (prod as any).images || [prod.image],
-      gallery_images: (prod as any).galleryImages || (prod as any).images || [prod.image],
+      images: finalImages,
       box_variants: boxVariants,
-      lead_time: (prod as any).leadTime || '24 hrs',
-      prep_time: (prod as any).prepTime || 'Baked Fresh Daily',
       in_stock: (prod as any).inStock !== undefined ? (prod as any).inStock : true,
       availability: (prod as any).inStock !== false ? 'In Stock' : 'Sold Out',
-      allergens: prod.allergens || ['Wheat', 'Dairy', 'Eggs'],
-      description: prod.description || '',
-      details: (prod as any).details || ['Freshly baked daily', 'Artisan recipe'],
-      badge: prod.badge || null,
-      rating: (prod as any).rating || 4.9,
-      reviews_count: (prod as any).reviewsCount || 85,
-      is_new: (prod as any).isNew || false
+      description: prod.description || ''
     };
 
     // Low Egress: Do not request the whole row back on insert
@@ -385,6 +394,7 @@ export async function createSupabaseProduct(prod: Product | AdminProduct): Promi
     }
 
     invalidateCache('products');
+    notifyServerCacheInvalidation();
     return true;
   } catch (err) {
     console.warn('[Supabase] Create product error:', err);
@@ -412,19 +422,31 @@ export async function updateSupabaseProduct(
       payload.price = updates.price;
       payload.base_price = updates.price;
     }
-    if (updates.originalPrice !== undefined) payload.original_price = updates.originalPrice;
-    if (updates.image !== undefined) payload.image = updates.image;
-    if (updates.images !== undefined) payload.images = updates.images;
-    if ('galleryImages' in updates && updates.galleryImages !== undefined) payload.gallery_images = updates.galleryImages;
+    if (updates.images !== undefined || updates.image !== undefined || (updates as any).galleryImages !== undefined) {
+      const rawImageList: string[] = updates.images && updates.images.length > 0
+        ? updates.images
+        : (updates as any).galleryImages && (updates as any).galleryImages.length > 0
+        ? (updates as any).galleryImages
+        : updates.image
+        ? [updates.image]
+        : [];
+
+      const sanitized = await Promise.all(
+        rawImageList.map(async (img) => {
+          if (img && (img.startsWith('data:image/') || img.startsWith('blob:'))) {
+            return await uploadImageToSupabaseStorage(img, 'product-images');
+          }
+          return img;
+        })
+      );
+      payload.images = sanitized;
+    }
     if ('boxVariants' in updates && updates.boxVariants !== undefined) payload.box_variants = updates.boxVariants;
-    if ('leadTime' in updates && updates.leadTime !== undefined) payload.lead_time = updates.leadTime;
     if (updates.inStock !== undefined) {
       payload.in_stock = updates.inStock;
       payload.availability = updates.inStock ? 'In Stock' : 'Sold Out';
     }
-    if (updates.allergens !== undefined) payload.allergens = updates.allergens;
     if (updates.description !== undefined) payload.description = updates.description;
-    if (updates.badge !== undefined) payload.badge = updates.badge;
 
     // Low Egress: Specify select('id') to avoid returning the entire row
     const { error } = await supabase
@@ -439,6 +461,7 @@ export async function updateSupabaseProduct(
     }
 
     invalidateCache('products');
+    notifyServerCacheInvalidation();
     return true;
   } catch (err) {
     console.warn('[Supabase] Update product error:', err);
@@ -462,6 +485,7 @@ export async function deleteSupabaseProduct(productId: string): Promise<boolean>
     }
 
     invalidateCache('products');
+    notifyServerCacheInvalidation();
     return true;
   } catch (err) {
     console.warn('[Supabase] Delete product error:', err);
@@ -474,6 +498,266 @@ export async function toggleSupabaseProductStock(productId: string, inStock: boo
     inStock,
     availability: inStock ? 'In Stock' : 'Sold Out'
   } as any);
+}
+
+/**
+ * Migration Utility: Scans database for products with raw base64 data images,
+ * automatically uploads each image to the 'product-images' bucket, and replaces
+ * the huge base64 strings with clean, lightweight Supabase Storage public URLs.
+ * Queries IDs first so it never fails with payload/buffer size errors.
+ */
+export async function sanitizeAndMigrateBase64ImagesToBucket(): Promise<{
+  totalChecked: number;
+  migratedCount: number;
+  errors: string[];
+}> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { totalChecked: 0, migratedCount: 0, errors: ['Supabase client is not connected. Please check your Supabase credentials in Settings.'] };
+  }
+
+  const errors: string[] = [];
+  let migratedCount = 0;
+
+  try {
+    // 1. Fetch ONLY lightweight ID & name list first (never crashes browser with oversized Base64 payloads)
+    const { data: productIds, error: listError } = await supabase
+      .from('products')
+      .select('id, name');
+
+    if (listError || !Array.isArray(productIds)) {
+      return { totalChecked: 0, migratedCount: 0, errors: [listError?.message || 'Failed to list product IDs from Supabase'] };
+    }
+
+    if (productIds.length === 0) {
+      return { totalChecked: 0, migratedCount: 0, errors: [] };
+    }
+
+    // 2. Process products one-by-one to keep network requests small and responsive
+    for (const item of productIds) {
+      try {
+        const { data: singleProd, error: itemError } = await supabase
+          .from('products')
+          .select('id, name, image, images, gallery_images')
+          .eq('id', item.id)
+          .maybeSingle();
+
+        if (itemError || !singleProd) {
+          errors.push(`Could not fetch details for product ${item.name || item.id}`);
+          continue;
+        }
+
+        let needsUpdate = false;
+        let newMainImage = singleProd.image;
+        let newImages = Array.isArray(singleProd.images) ? [...singleProd.images] : (singleProd.image ? [singleProd.image] : []);
+        let newGallery = Array.isArray(singleProd.gallery_images) ? [...singleProd.gallery_images] : newImages;
+
+        // Check main image
+        if (newMainImage && (newMainImage.startsWith('data:image/') || newMainImage.startsWith('blob:'))) {
+          try {
+            newMainImage = await uploadImageToSupabaseStorage(newMainImage, 'product-images');
+            needsUpdate = true;
+          } catch (e: any) {
+            errors.push(`Failed to upload main image for ${item.name || item.id}: ${e?.message}`);
+          }
+        }
+
+        // Check images array
+        const updatedImages: string[] = [];
+        for (const img of newImages) {
+          if (img && (img.startsWith('data:image/') || img.startsWith('blob:'))) {
+            try {
+              const uploadedUrl = await uploadImageToSupabaseStorage(img, 'product-images');
+              updatedImages.push(uploadedUrl);
+              needsUpdate = true;
+            } catch (e: any) {
+              updatedImages.push(img);
+              errors.push(`Failed to upload gallery image for ${item.name || item.id}`);
+            }
+          } else if (img) {
+            updatedImages.push(img);
+          }
+        }
+        newImages = updatedImages.length > 0 ? updatedImages : (newMainImage ? [newMainImage] : []);
+
+        // Check gallery_images array
+        const updatedGallery: string[] = [];
+        for (const img of newGallery) {
+          if (img && (img.startsWith('data:image/') || img.startsWith('blob:'))) {
+            try {
+              const uploadedUrl = await uploadImageToSupabaseStorage(img, 'product-images');
+              updatedGallery.push(uploadedUrl);
+              needsUpdate = true;
+            } catch (e: any) {
+              updatedGallery.push(img);
+            }
+          } else if (img) {
+            updatedGallery.push(img);
+          }
+        }
+        newGallery = updatedGallery.length > 0 ? updatedGallery : newImages;
+
+        if (needsUpdate) {
+          const { error: updateErr } = await supabase
+            .from('products')
+            .update({
+              image: newMainImage,
+              images: newImages,
+              gallery_images: newGallery
+            })
+            .eq('id', item.id);
+
+          if (!updateErr) {
+            migratedCount++;
+          } else {
+            errors.push(`Failed updating row in Supabase for ${item.name || item.id}: ${updateErr.message}`);
+          }
+        }
+      } catch (rowErr: any) {
+        errors.push(`Error processing ${item.name || item.id}: ${rowErr?.message || rowErr}`);
+      }
+    }
+
+    invalidateCache('products');
+    notifyServerCacheInvalidation();
+
+    return {
+      totalChecked: productIds.length,
+      migratedCount,
+      errors
+    };
+  } catch (err: any) {
+    return {
+      totalChecked: 0,
+      migratedCount: 0,
+      errors: [err?.message || 'Unexpected migration exception']
+    };
+  }
+}
+
+// ==============================================================================
+// SUPABASE REALTIME LISTENERS (Push instant updates without page reload)
+// ==============================================================================
+
+/**
+ * Subscribes to Supabase Realtime changes on public.products
+ * Receives INSERT, UPDATE, DELETE events immediately over WebSocket
+ */
+export function subscribeToSupabaseProducts(
+  onUpsert: (product: Product) => void,
+  onDelete: (productId: string) => void
+): () => void {
+  const supabase = getSupabaseClient();
+  if (!supabase) return () => {};
+
+  try {
+    const channel = supabase
+      .channel('realtime:products_catalog')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        (payload: any) => {
+          invalidateCache('products');
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            if (payload.new && payload.new.id) {
+              const product = mapSupabaseRowToProduct(payload.new);
+              onUpsert(product);
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old?.id;
+            if (deletedId) {
+              onDelete(deletedId);
+            }
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.info('[Supabase Realtime] Connected to products channel');
+        }
+      });
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  } catch (err) {
+    console.warn('[Supabase Realtime] Failed to subscribe to products:', err);
+    return () => {};
+  }
+}
+
+/**
+ * Subscribes to Supabase Realtime changes on public.orders
+ * Receives live checkout orders and status modifications
+ */
+export function subscribeToSupabaseOrders(
+  onUpsert: (order: AdminOrder) => void,
+  onDelete: (orderId: string) => void
+): () => void {
+  const supabase = getSupabaseClient();
+  if (!supabase) return () => {};
+
+  try {
+    const channel = supabase
+      .channel('realtime:live_orders')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        (payload: any) => {
+          invalidateCache('orders');
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            if (payload.new && payload.new.id) {
+              const row = payload.new;
+              const order: AdminOrder = {
+                id: row.id,
+                orderNumber: row.order_number,
+                customerName: row.customer_name,
+                customerPhone: row.customer_phone,
+                customerEmail: row.customer_email || undefined,
+                type: row.type as any,
+                paymentMethod: row.payment_method as any,
+                status: normalizeOrderStatus(row.status),
+                totalAmount: Number(row.total_amount || 0),
+                items: Array.isArray(row.items) ? row.items : [],
+                address: row.address || undefined,
+                deliveryAddress: row.delivery_address || undefined,
+                deliveryNotes: row.delivery_notes || undefined,
+                referenceNumber: row.reference_number || undefined,
+                pickupHub: row.pickup_hub || 'Main Bakery Counter, Davao City',
+                allergyWarnings: row.allergy_warnings || undefined,
+                customCakeNotes: row.custom_cake_notes || undefined,
+                deliveryDate: row.delivery_date || undefined,
+                targetDate: row.target_date || undefined,
+                targetTime: row.target_time || undefined,
+                createdAt: row.created_at ? new Date(row.created_at).toLocaleString('en-US') : 'Just now'
+              };
+              onUpsert(order);
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old?.id;
+            if (deletedId) {
+              onDelete(deletedId);
+            }
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.info('[Supabase Realtime] Connected to orders stream');
+        }
+      });
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  } catch (err) {
+    console.warn('[Supabase Realtime] Failed to subscribe to orders:', err);
+    return () => {};
+  }
 }
 
 // ==============================================================================
@@ -682,7 +966,7 @@ export async function fetchSupabaseHubs(forceRefresh = false): Promise<BakeryHub
   try {
     const query = supabase
       .from('bakery_hubs')
-      .select(PROJECTIONS.HUBS)
+      .select('id, name, address, hours, phone, is_active')
       .limit(50);
 
     const { data, error } = await executeWithTimeout(query, 12000);
@@ -802,7 +1086,7 @@ export async function fetchSupabaseBlackouts(forceRefresh = false): Promise<Blac
   try {
     const query = supabase
       .from('blackout_dates')
-      .select(PROJECTIONS.BLACKOUTS)
+      .select('id, date, reason')
       .limit(100);
 
     const { data, error } = await executeWithTimeout(query, 12000);
