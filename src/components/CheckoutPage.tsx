@@ -172,11 +172,6 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   const [snapshotPaymentMethod, setSnapshotPaymentMethod] = useState<PaymentStatus>('GCash (Paid)');
   const [isOrderSummaryOpen, setIsOrderSummaryOpen] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
-  const [paymongoPendingSession, setPaymongoPendingSession] = useState<{
-    url: string;
-    order: AdminOrder;
-    ref: string;
-  } | null>(null);
   const [paymongoError, setPaymongoError] = useState<string | null>(null);
 
   // Cavite Location & Zone Calculations
@@ -309,13 +304,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
             console.warn('Could not save pending order to storage:', e);
           }
 
-          setPaymongoPendingSession({
-            url: sessionRes.checkoutUrl,
-            order: newOrder,
-            ref: randomRef
-          });
-
-          // Immediate navigation to PayMongo hosted payment portal
+          // Immediate direct navigation to PayMongo payment portal
           window.location.href = sessionRes.checkoutUrl;
           return;
         }
@@ -338,28 +327,6 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     }
 
     setIsOrderComplete(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  // Helper: confirm completed PayMongo payment from modal
-  const handleConfirmPayMongoCompleted = () => {
-    if (!paymongoPendingSession) return;
-    const paidOrder: AdminOrder = {
-      ...paymongoPendingSession.order,
-      paymentMethod: 'GCash (Paid)'
-    };
-    setSnapshotPaymentMethod('GCash (Paid)');
-    setConfirmedOrder(paidOrder);
-    if (onPlaceOrder) {
-      onPlaceOrder(paidOrder);
-    }
-    setPaymongoPendingSession(null);
-    setIsOrderComplete(true);
-    try {
-      localStorage.removeItem('sheys_pending_order');
-    } catch {
-      // ignore
-    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -1486,78 +1453,6 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
         </div>
       </div>
-
-      {/* PayMongo Payment Redirection / Portal Access Modal */}
-      {paymongoPendingSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-[#fffcf7] rounded-3xl border border-[#ebdcd0] max-w-md w-full p-6 sm:p-8 shadow-2xl space-y-6 text-[#552110] relative">
-            
-            {/* Header */}
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 rounded-2xl bg-amber-50 border border-amber-200/80 mx-auto flex items-center justify-center text-amber-700 shadow-xs">
-                <ShieldCheck className="w-9 h-9 text-[#d94d2f]" />
-              </div>
-              <h3 className="font-serif text-2xl font-bold text-[#552110] tracking-tight pt-2">
-                PayMongo Payment Ready
-              </h3>
-              <p className="text-xs sm:text-sm text-[#8b634b]">
-                Complete your payment with <strong>GCash</strong>, <strong>Maya</strong>, <strong>QR Ph</strong>, or <strong>Cards</strong>.
-              </p>
-            </div>
-
-            {/* Order Brief Info */}
-            <div className="bg-[#faf5ea] rounded-2xl border border-[#ebdcd0] p-4 space-y-2 text-xs sm:text-sm">
-              <div className="flex justify-between text-[#8b634b]">
-                <span>Order Reference</span>
-                <span className="font-mono font-bold text-[#552110]">{paymongoPendingSession.ref}</span>
-              </div>
-              <div className="flex justify-between text-[#8b634b]">
-                <span>Amount to Pay</span>
-                <span className="font-bold text-[#d94d2f] text-sm sm:text-base">
-                  ₱{totalAmount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="space-y-3 pt-1">
-              <a
-                href={paymongoPendingSession.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full bg-[#d94d2f] hover:bg-[#c03d21] text-white font-bold py-3.5 px-6 rounded-2xl border border-[#542515] shadow-[0px_3px_0px_#542515] transition-all flex items-center justify-center gap-2 text-sm sm:text-base text-center cursor-pointer active:translate-y-0.5 active:shadow-none"
-              >
-                <span>Open PayMongo Payment Portal</span>
-                <ExternalLink className="w-4 h-4" />
-              </a>
-
-              <button
-                type="button"
-                onClick={handleConfirmPayMongoCompleted}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-2xl shadow-xs transition-colors flex items-center justify-center gap-2 text-sm cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>I Have Completed Payment</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setPaymongoPendingSession(null)}
-                className="w-full bg-transparent hover:bg-amber-50 text-[#8b634b] hover:text-[#552110] font-medium py-2.5 px-4 rounded-xl text-xs transition-colors cursor-pointer"
-              >
-                Back to Checkout Form
-              </button>
-            </div>
-
-            <div className="text-center">
-              <p className="text-[11px] text-[#8b634b]/80">
-                🔒 Official 256-bit SSL encrypted gateway via PayMongo Philippines
-              </p>
-            </div>
-
-          </div>
-        </div>
-      )}
 
     </div>
   );
