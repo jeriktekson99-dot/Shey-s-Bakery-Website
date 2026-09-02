@@ -340,8 +340,9 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({
         ) : (
           /* Primary 4-Column Responsive Product Grid (4x4 Layout) */
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 sm:gap-8">
-            {paginatedProducts.map((product) => {
+            {paginatedProducts.map((product, idx) => {
               const isJustAdded = addedIds[product.id];
+              const isAboveFold = idx < 8;
 
               return (
                 <div
@@ -355,12 +356,14 @@ export const CatalogPage: React.FC<CatalogPageProps> = ({
                       src={getOptimizedImageUrl(product.image, { width: 500, quality: 75 })}
                       alt={product.name}
                       referrerPolicy="no-referrer"
+                      decoding="async"
                       className={`w-full h-full object-cover object-center transition-transform duration-500 ease-out ${
                         product.inStock === false || product.availability === 'Sold Out'
                           ? 'grayscale-[30%] opacity-85'
                           : 'group-hover:scale-105'
                       }`}
-                      loading="lazy"
+                      loading={isAboveFold ? 'eager' : 'lazy'}
+                      {...(idx < 4 ? { fetchPriority: 'high' } : {})}
                     />
                     {(product.inStock === false || product.availability === 'Sold Out') && (
                       <div className="absolute top-3 left-3 bg-[#4a170a]/90 backdrop-blur-xs text-amber-100 text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-full border border-amber-300/30">

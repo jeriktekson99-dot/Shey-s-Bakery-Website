@@ -10,6 +10,7 @@ import {
   saveSupabaseSocialLinks as persistSupabaseSocialLinks
 } from '../services/supabaseService';
 import { isSupabaseConfigured, initSupabaseFromRemote } from '../lib/supabase';
+import { preloadProductImages } from '../lib/imageOptimization';
 
 export const DEFAULT_BAKERY_HUBS: BakeryHubLocation[] = [];
 
@@ -258,6 +259,7 @@ export async function loadInitialMasterDataFromSupabase(forceRefresh = false): P
       const cleanProds = deduplicateById(prodRes.value);
       result.products = cleanProds;
       saveProductsToStorage(cleanProds);
+      preloadProductImages(cleanProds);
     }
     if (ordRes.status === 'fulfilled' && ordRes.value !== null) {
       const cleanOrders = deduplicateById(ordRes.value);
