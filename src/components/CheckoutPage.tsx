@@ -301,49 +301,29 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
           fulfillment: fulfillment
         });
 
-        // If a real or valid checkout URL is returned
-        if (sessionRes?.checkoutUrl && !sessionRes.simulated) {
+        // If a valid checkout URL is returned from PayMongo
+        if (sessionRes?.checkoutUrl) {
           try {
             localStorage.setItem('sheys_pending_order', JSON.stringify(newOrder));
           } catch (e) {
             console.warn('Could not save pending order to storage:', e);
           }
 
-          // Open in a new tab to avoid iframe security blocks
-          const openedTab = window.open(sessionRes.checkoutUrl, '_blank');
-
-          // Always set pending session so user has an accessible modal/direct link
           setPaymongoPendingSession({
             url: sessionRes.checkoutUrl,
             order: newOrder,
             ref: randomRef
           });
 
-          // If popup was blocked and we are top window, redirect directly
-          if (!openedTab && window.top === window) {
-            window.location.href = sessionRes.checkoutUrl;
-          }
+          // Immediate navigation to PayMongo hosted payment portal
+          window.location.href = sessionRes.checkoutUrl;
           return;
         }
 
-        // In sandbox / simulated mode: complete order directly with GCash / Maya / QR Ph
-        const paidOrder: AdminOrder = {
-          ...newOrder,
-          paymentMethod: 'GCash (Paid)'
-        };
-
-        setSnapshotPaymentMethod('GCash (Paid)');
-        setConfirmedOrder(paidOrder);
-
-        if (onPlaceOrder) {
-          onPlaceOrder(paidOrder);
-        }
-
-        setIsOrderComplete(true);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        throw new Error('No payment URL received from PayMongo.');
       } catch (err: any) {
         console.error('PayMongo checkout session init error:', err);
-        setPaymongoError(err?.message || 'Unable to connect to PayMongo payment gateway. Please try again.');
+        setPaymongoError(err?.message || 'Unable to connect to PayMongo payment gateway. Please make sure PAYMONGO_SECRET_KEY is configured in your Vercel Environment Variables.');
       } finally {
         setIsInitiatingPayment(false);
       }

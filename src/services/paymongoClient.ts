@@ -117,27 +117,20 @@ export async function createPayMongoCheckoutSession(
       body: JSON.stringify(sanitizedParams),
     });
 
+    const data = await res.json().catch(() => ({}));
+
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || `Server responded with status ${res.status}`);
+      throw new Error(data.error || data.message || `Payment server error (${res.status})`);
     }
 
-    const data = await res.json();
+    if (!data.checkoutUrl) {
+      throw new Error(data.error || 'No checkout URL returned from payment gateway.');
+    }
+
     return data;
   } catch (error: any) {
     console.error('[PayMongo] Create checkout session error:', error);
-    // Return graceful fallback simulation without breaking user checkout experience
-    const fallbackId = `cs_sim_${Date.now()}`;
-    return {
-      success: true,
-      mode: 'simulation',
-      simulated: true,
-      sessionId: fallbackId,
-      checkoutUrl: `/?simulated_paymongo=1&session=${fallbackId}&ref=${encodeURIComponent(params.orderRef)}`,
-      totalAmount: params.items.reduce((s, i) => s + (i.price * i.quantity), 0) + (params.deliveryFee || 0),
-      orderRef: params.orderRef,
-      message: error?.message || 'Sandbox simulated session'
-    };
+    throw error;
   }
 }
 
